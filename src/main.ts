@@ -98,9 +98,8 @@ const tick$ = interval(Constants.TICK_RATE_MS).pipe(
     map((elapsed) => new Tick(elapsed)),
 );
 
-export const state$: Observable<State> = merge(flip$, tick$).pipe(
-    scan(reduceState, initialState),
-);
+export const state$ = (): Observable<State> =>
+    merge(flip$, tick$).pipe(scan(reduceState, initialState));
 
 
 /**
