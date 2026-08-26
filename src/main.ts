@@ -43,14 +43,28 @@ const Constants = {
     TICK_RATE_MS: 500, // Might need to change this!
 } as const;
 
+// types
+type Digit = 0 | 1; 
+
 // State processing
 type State = Readonly<{
+    digits: ReadonlyArray<Digit>; // 8-bit row, index 0 = MSB
     gameEnd: boolean;
 }>;
 
 const initialState: State = {
+    digits: Array(Constants.DIGIT_COUNT).fill(0),
     gameEnd: false,
 };
+
+// actions
+class FlipDigit {
+    constructor(public readonly index: number) {}
+}
+class Tick {
+    constructor(public readonly elapsed: number) {}
+}
+type Action = FlipDigit | Tick;
 
 /**
  * Updates the state by proceeding with one time step.
