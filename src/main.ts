@@ -21,6 +21,7 @@ import {
     fromEvent,
     interval,
     map,
+    merge,
     scan,
     switchMap,
     take,
@@ -58,24 +59,48 @@ const initialState: State = {
 };
 
 // actions
-class FlipDigit {
-    constructor(public readonly index: number) {}
+interface Action {
+    apply(s: State): State;
 }
-class Tick {
-    constructor(public readonly elapsed: number) {}
-}
-type Action = FlipDigit | Tick;
 
-// pure reducer
-const reduceState = (s: State, action: Action): State =>
-    action instanceof FlipDigit
-        ? {
-              ...s,
-              digits: s.digits.map((d, i) =>
-                  i === action.index ? ((1 - d) as Digit) : d,
-              ),
-          }
-        : s; // tick handling comes later (falling targets, collision check)
+class FlipDigit implements Action {
+    constructor(public readonly index: number) {}
+
+    apply(s: State): State {
+        return {
+            ...s,
+            digits: s.digits.map((d, i) =>
+                i === this.index ? ((1 - d) as Digit) : d,
+            ),
+        };
+    }
+}
+
+class Tick implements Action {
+    constructor(public readonly elapsed: number) {}
+
+    apply(s: State): State {
+        // falling-target movement & collision logic will live here
+        return s;
+    }
+}
+
+// reducer just delegates
+const reduceState = (s: State, action: Action): State => action.apply(s);
+
+// streams
+const flip$ = fromEvent<KeyboardEvent>(document, "keypress").pipe(
+    filter((e) => /^[1-8]$/.test(e.key)),
+    map((e) => new FlipDigit(Number(e.key) - 1)),
+);
+
+const tick$ = interval(Constants.TICK_RATE_MS).pipe(
+    map((elapsed) => new Tick(elapsed)),
+);
+
+export const state$: Observable<State> = merge(flip$, tick$).pipe(
+    scan(reduceState, initialState),
+);
 
 
 /**
@@ -84,7 +109,7 @@ const reduceState = (s: State, action: Action): State =>
  * @param s Current state
  * @returns Updated state
  */
-const tick = (s: State) => s;
+//const tick = (s: State) => s;
 
 // Rendering (side effects)
 
@@ -197,12 +222,12 @@ const render = (): ((s: State) => void) => {
     };
 };
 
-export const state$ = (): Observable<State> => {
-    /** Determines the rate of time steps */
-    const tick$ = interval(Constants.TICK_RATE_MS);
+// export const state$ = (): Observable<State> => {
+//     /** Determines the rate of time steps */
+//     const tick$ = interval(Constants.TICK_RATE_MS);
 
-    return tick$.pipe(scan((s: State) => ({ gameEnd: false }), initialState));
-};
+//     return tick$.pipe(scan((s: State) => ({ gameEnd: false }), initialState));
+// };
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
 // You should not need to change this, beware if you are.
