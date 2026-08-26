@@ -66,6 +66,18 @@ class Tick {
 }
 type Action = FlipDigit | Tick;
 
+// pure reducer
+const reduceState = (s: State, action: Action): State =>
+    action instanceof FlipDigit
+        ? {
+              ...s,
+              digits: s.digits.map((d, i) =>
+                  i === action.index ? ((1 - d) as Digit) : d,
+              ),
+          }
+        : s; // tick handling comes later (falling targets, collision check)
+
+
 /**
  * Updates the state by proceeding with one time step.
  *
