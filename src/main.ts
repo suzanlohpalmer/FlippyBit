@@ -47,9 +47,15 @@ const Constants = {
 // types
 type Digit = 0 | 1; 
 
+type FallingTarget = Readonly<{
+    value: number; // 0-15, the hex digit the player must match
+    y: number;     // current vertical position
+}>;
+
 // State processing
 type State = Readonly<{
     digits: ReadonlyArray<Digit>; // 8-bit row, index 0 = MSB
+    targets: ReadonlyArray<FallingTarget>;
     gameEnd: boolean;
 }>;
 
@@ -174,27 +180,6 @@ const render = (): ((s: State) => void) => {
      */
     return (s: State) => {
         svg.innerHTML = ""; // clear last frame before drawing this one
-        // Draw a static falling target as a demonstration
-        // const target = createSvgElement(svg.namespaceURI, "rect", {
-        //     x: `${Viewport.CANVAS_WIDTH / 2 - Target.WIDTH / 2}`,
-        //     y: "40",
-        //     width: `${Target.WIDTH}`,
-        //     height: `${Target.HEIGHT}`,
-        //     rx: "6",
-        //     fill: "white",
-        //     stroke: "black",
-        //     "stroke-width": "2",
-        // });
-        // const targetText = createSvgElement(svg.namespaceURI, "text", {
-        //     x: `${Viewport.CANVAS_WIDTH / 2}`,
-        //     y: `${40 + Target.HEIGHT / 2 + 8}`,
-        //     "text-anchor": "middle",
-        //     "font-family": "monospace",
-        //     fill: "black",
-        // });
-        // targetText.textContent = "13";
-        // svg.appendChild(target);
-        // svg.appendChild(targetText);
 
         // Draw the row of digit toggles as a demonstration
         const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
