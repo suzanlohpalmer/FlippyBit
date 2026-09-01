@@ -173,6 +173,7 @@ const render = (): ((s: State) => void) => {
      * @param s Current state
      */
     return (s: State) => {
+        svg.innerHTML = ""; // clear last frame before drawing this one
         // Draw a static falling target as a demonstration
         const target = createSvgElement(svg.namespaceURI, "rect", {
             x: `${Viewport.CANVAS_WIDTH / 2 - Target.WIDTH / 2}`,
