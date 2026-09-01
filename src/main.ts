@@ -59,8 +59,17 @@ type State = Readonly<{
     gameEnd: boolean;
 }>;
 
+const TARGET_SEQUENCE: ReadonlyArray<number> = [13, 5, 10, 2, 15, 8];
+
+const TargetConfig = {
+    FALL_SPEED: 4, // px per tick
+    CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 60,
+    SPAWN_Y: 20,
+} as const;
+
 const initialState: State = {
     digits: Array(Constants.DIGIT_COUNT).fill(0),
+    targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
     gameEnd: false,
 };
 
