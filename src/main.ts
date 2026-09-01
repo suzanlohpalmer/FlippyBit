@@ -175,36 +175,36 @@ const render = (): ((s: State) => void) => {
     return (s: State) => {
         svg.innerHTML = ""; // clear last frame before drawing this one
         // Draw a static falling target as a demonstration
-        const target = createSvgElement(svg.namespaceURI, "rect", {
-            x: `${Viewport.CANVAS_WIDTH / 2 - Target.WIDTH / 2}`,
-            y: "40",
-            width: `${Target.WIDTH}`,
-            height: `${Target.HEIGHT}`,
-            rx: "6",
-            fill: "white",
-            stroke: "black",
-            "stroke-width": "2",
-        });
-        const targetText = createSvgElement(svg.namespaceURI, "text", {
-            x: `${Viewport.CANVAS_WIDTH / 2}`,
-            y: `${40 + Target.HEIGHT / 2 + 8}`,
-            "text-anchor": "middle",
-            "font-family": "monospace",
-            fill: "black",
-        });
-        targetText.textContent = "13";
-        svg.appendChild(target);
-        svg.appendChild(targetText);
+        // const target = createSvgElement(svg.namespaceURI, "rect", {
+        //     x: `${Viewport.CANVAS_WIDTH / 2 - Target.WIDTH / 2}`,
+        //     y: "40",
+        //     width: `${Target.WIDTH}`,
+        //     height: `${Target.HEIGHT}`,
+        //     rx: "6",
+        //     fill: "white",
+        //     stroke: "black",
+        //     "stroke-width": "2",
+        // });
+        // const targetText = createSvgElement(svg.namespaceURI, "text", {
+        //     x: `${Viewport.CANVAS_WIDTH / 2}`,
+        //     y: `${40 + Target.HEIGHT / 2 + 8}`,
+        //     "text-anchor": "middle",
+        //     "font-family": "monospace",
+        //     fill: "black",
+        // });
+        // targetText.textContent = "13";
+        // svg.appendChild(target);
+        // svg.appendChild(targetText);
 
         // Draw the row of digit toggles as a demonstration
         const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
-        Array.from({ length: Constants.DIGIT_COUNT }).forEach((_, i) => {
+        s.digits.forEach((digit, i) => {
             const bit = createSvgElement(svg.namespaceURI, "rect", {
                 x: `${i * digitWidth + 4}`,
                 y: `${Viewport.CANVAS_HEIGHT - 50}`,
                 width: `${digitWidth - 8}`,
                 height: "40",
-                fill: "#ef9a9a",
+                fill: digit === 1 ? "#a5d6a7" : "#ef9a9a",
                 stroke: "black",
                 "stroke-width": "2",
             });
@@ -215,7 +215,7 @@ const render = (): ((s: State) => void) => {
                 "font-family": "monospace",
                 fill: "black",
             });
-            bitText.textContent = "0";
+            bitText.textContent = String(digit);
             svg.appendChild(bit);
             svg.appendChild(bitText);
         });
