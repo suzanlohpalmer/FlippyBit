@@ -56,20 +56,25 @@ type FallingTarget = Readonly<{
 type State = Readonly<{
     digits: ReadonlyArray<Digit>; // 8-bit row, index 0 = MSB
     targets: ReadonlyArray<FallingTarget>;
+    nextTargetIndex: number;      // position in TARGET_SEQUENCE for next spawn
+    ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
     gameEnd: boolean;
 }>;
 
 const TARGET_SEQUENCE: ReadonlyArray<number> = [13, 5, 10, 2, 15, 8];
 
 const TargetConfig = {
-    FALL_SPEED: 4, // px per tick
+    FALL_SPEED: 6, // px per tick
     CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
     SPAWN_Y: 20,
+    SPAWN_INTERVAL_TICKS: 8,
 } as const;
 
 const initialState: State = {
     digits: Array(Constants.DIGIT_COUNT).fill(0),
     targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
+    nextTargetIndex: 1,
+    ticksSinceLastSpawn: 0,
     gameEnd: false,
 };
 
@@ -112,15 +117,39 @@ class Tick implements Action {
         const isCorrectMatch =
             hasReachedLine && digitsToNumber(s.digits) === lowest.value;
 
+        const targetsAfterCollision = hasReachedLine
+            ? isCorrectMatch
+                ? movedTargets.slice(1)
+                : movedTargets
+            : movedTargets;
+            
+        // Spawning: independent of collision, purely time-based
+        const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
+        const readyToSpawn =
+            ticksSinceLastSpawn >= TargetConfig.SPAWN_INTERVAL_TICKS &&
+            s.nextTargetIndex < TARGET_SEQUENCE.length;
+
+        const targetsAfterSpawn = readyToSpawn
+            ? [
+                  ...targetsAfterCollision,
+                  {
+                      value: TARGET_SEQUENCE[s.nextTargetIndex],
+                      y: TargetConfig.SPAWN_Y,
+                  },
+              ]
+            : targetsAfterCollision;
+
         return s.gameEnd
             ? s
-            : hasReachedLine
-              ? {
+              : {
                     ...s,
-                    targets: isCorrectMatch ? movedTargets.slice(1) : movedTargets,
-                    gameEnd: !isCorrectMatch,
-                }
-              : { ...s, targets: movedTargets };
+                    targets: targetsAfterSpawn,
+                    nextTargetIndex: readyToSpawn
+                        ? s.nextTargetIndex + 1
+                        : s.nextTargetIndex,
+                    ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
+                    gameEnd: hasReachedLine ? !isCorrectMatch : s.gameEnd,
+                };
     }
 }
 
