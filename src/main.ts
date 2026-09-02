@@ -73,6 +73,9 @@ const initialState: State = {
     gameEnd: false,
 };
 
+const digitsToNumber = (digits: ReadonlyArray<Digit>): number =>
+    digits.reduce<number>((acc, d) => acc * 2 + d, 0);
+
 // actions
 interface Action {
     apply(s: State): State;
@@ -96,7 +99,28 @@ class Tick implements Action {
 
     apply(s: State): State {
         // falling-target movement & collision logic will live here
-        return s;
+        const movedTargets = s.targets.map((t) => ({
+            ...t,
+            y: t.y + TargetConfig.FALL_SPEED,
+        }));
+
+        const lowest = movedTargets[0];
+
+        const hasReachedLine =
+            lowest !== undefined && lowest.y >= TargetConfig.CHECK_LINE_Y;
+
+        const isCorrectMatch =
+            hasReachedLine && digitsToNumber(s.digits) === lowest.value;
+
+        return s.gameEnd
+            ? s
+            : hasReachedLine
+              ? {
+                    ...s,
+                    targets: isCorrectMatch ? movedTargets.slice(1) : movedTargets,
+                    gameEnd: !isCorrectMatch,
+                }
+              : { ...s, targets: movedTargets };
     }
 }
 
@@ -189,6 +213,30 @@ const render = (): ((s: State) => void) => {
      */
     return (s: State) => {
         svg.innerHTML = ""; // clear last frame before drawing this one
+
+        // Draw falling targets
+        s.targets.forEach((t) => {
+            const box = createSvgElement(svg.namespaceURI, "rect", {
+                x: `${Viewport.CANVAS_WIDTH / 2 - Target.WIDTH / 2}`,
+                y: `${t.y}`,
+                width: `${Target.WIDTH}`,
+                height: `${Target.HEIGHT}`,
+                rx: "6",
+                fill: "white",
+                stroke: "black",
+                "stroke-width": "2",
+            });
+            const text = createSvgElement(svg.namespaceURI, "text", {
+                x: `${Viewport.CANVAS_WIDTH / 2}`,
+                y: `${t.y + Target.HEIGHT / 2 + 8}`,
+                "text-anchor": "middle",
+                "font-family": "monospace",
+                fill: "black",
+            });
+            text.textContent = t.value.toString(16).toUpperCase();
+            svg.appendChild(box);
+            svg.appendChild(text);
+        });
 
         // Draw the row of digit toggles as a demonstration
         const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
