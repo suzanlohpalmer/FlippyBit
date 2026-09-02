@@ -63,7 +63,7 @@ const TARGET_SEQUENCE: ReadonlyArray<number> = [13, 5, 10, 2, 15, 8];
 
 const TargetConfig = {
     FALL_SPEED: 4, // px per tick
-    CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 60,
+    CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
     SPAWN_Y: 20,
 } as const;
 
@@ -217,9 +217,9 @@ const render = (): ((s: State) => void) => {
         // check line 
         const checkLine = createSvgElement(svg.namespaceURI, "line", {
             x1: "0",
-            y1: `${TargetConfig.CHECK_LINE_Y + Target.HEIGHT}`,
+            y1: `${TargetConfig.CHECK_LINE_Y}`,
             x2: `${Viewport.CANVAS_WIDTH}`,
-            y2: `${TargetConfig.CHECK_LINE_Y + Target.HEIGHT}`,
+            y2: `${TargetConfig.CHECK_LINE_Y}`,
             stroke: "red",
             "stroke-width": "2",
             "stroke-dasharray": "6,4",
