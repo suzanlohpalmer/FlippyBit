@@ -273,6 +273,22 @@ const render = (): ((s: State) => void) => {
             svg.appendChild(bit);
             svg.appendChild(bitText);
         });
+
+        // Game over overlay
+        s.gameEnd && svg.appendChild(
+            (() => {
+                const gameOverText = createSvgElement(svg.namespaceURI, "text", {
+                    x: `${Viewport.CANVAS_WIDTH / 2}`,
+                    y: `${Viewport.CANVAS_HEIGHT / 2}`,
+                    "text-anchor": "middle",
+                    "font-family": "monospace",
+                    "font-size": "32",
+                    fill: "red",
+                });
+                gameOverText.textContent = "GAME OVER";
+                return gameOverText;
+            })(),
+        );
     };
 };
 
