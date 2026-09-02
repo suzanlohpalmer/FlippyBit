@@ -214,6 +214,18 @@ const render = (): ((s: State) => void) => {
     return (s: State) => {
         svg.innerHTML = ""; // clear last frame before drawing this one
 
+        // check line 
+        const checkLine = createSvgElement(svg.namespaceURI, "line", {
+            x1: "0",
+            y1: `${TargetConfig.CHECK_LINE_Y + Target.HEIGHT}`,
+            x2: `${Viewport.CANVAS_WIDTH}`,
+            y2: `${TargetConfig.CHECK_LINE_Y + Target.HEIGHT}`,
+            stroke: "red",
+            "stroke-width": "2",
+            "stroke-dasharray": "6,4",
+        });
+        svg.appendChild(checkLine);
+
         // Draw falling targets
         s.targets.forEach((t) => {
             const box = createSvgElement(svg.namespaceURI, "rect", {
