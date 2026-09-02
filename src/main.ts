@@ -214,6 +214,16 @@ const render = (): ((s: State) => void) => {
     return (s: State) => {
         svg.innerHTML = ""; // clear last frame before drawing this one
 
+        const debugText = createSvgElement(svg.namespaceURI, "text", {
+            x: "10",
+            y: "20",
+            "font-family": "monospace",
+            "font-size": "14",
+            fill: "black",
+        });
+        debugText.textContent = `value=${digitsToNumber(s.digits)} gameEnd=${s.gameEnd}`;
+        svg.appendChild(debugText);
+
         // check line 
         const checkLine = createSvgElement(svg.namespaceURI, "line", {
             x1: "0",
