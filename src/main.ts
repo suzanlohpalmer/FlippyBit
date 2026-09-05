@@ -111,16 +111,19 @@ class Tick implements Action {
 
         const lowest = movedTargets[0];
 
-        const hasReachedLine =
-            lowest !== undefined && lowest.y >= TargetConfig.CHECK_LINE_Y;
+        // Check for a match every tick, regardless of position
+        const isMatch =
+            lowest !== undefined &&
+            digitsToNumber(s.digits) === lowest.value;
 
-        const isCorrectMatch =
-            hasReachedLine && digitsToNumber(s.digits) === lowest.value;
+        // Only a miss if it reached the line w/o a match
+        const isMissedAtLine =
+            lowest !== undefined &&
+            !isMatch &&
+            lowest.y >= TargetConfig.CHECK_LINE_Y;
 
-        const targetsAfterCollision = hasReachedLine
-            ? isCorrectMatch
-                ? movedTargets.slice(1)
-                : movedTargets
+        const targetsAfterCollision = isMatch
+            ? movedTargets.slice(1)
             : movedTargets;
             
         // Spawning: independent of collision, purely time-based
@@ -148,7 +151,7 @@ class Tick implements Action {
                         ? s.nextTargetIndex + 1
                         : s.nextTargetIndex,
                     ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
-                    gameEnd: hasReachedLine ? !isCorrectMatch : s.gameEnd,
+                    gameEnd: isMissedAtLine ? true : s.gameEnd,
                 };
     }
 }
