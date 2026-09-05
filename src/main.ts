@@ -57,7 +57,8 @@ type State = Readonly<{
     digits: ReadonlyArray<Digit>; // 8-bit row, index 0 = MSB
     targets: ReadonlyArray<FallingTarget>;
     nextTargetIndex: number;      // position in TARGET_SEQUENCE for next spawn
-    ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
+    seed: number; // current RNG seed
+    //ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
     gameEnd: boolean;
 }>;
 
@@ -70,13 +71,25 @@ const TargetConfig = {
     SPAWN_INTERVAL_TICKS: 8,
 } as const;
 
+// Minimum ms between spawns so a target clears its own height before the
+// next one spawns at the same y position, plus a small safety margin.
+const MIN_SPAWN_DELAY_MS =
+    ((Target.HEIGHT + 20) / TargetConfig.FALL_SPEED) * Constants.TICK_RATE_MS;
+
+const MAX_SPAWN_DELAY_MS = MIN_SPAWN_DELAY_MS + 1500;
+
 const initialState: State = {
     digits: Array(Constants.DIGIT_COUNT).fill(0),
     targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
     nextTargetIndex: 1,
-    ticksSinceLastSpawn: 0,
+    seed: 42,
+    //ticksSinceLastSpawn: 0,
     gameEnd: false,
 };
+
+/** Maps a [0,1) scaled seed value into a spawn-delay range. Pure. */
+const seedToSpawnDelay = (scaledSeed: number): number =>
+    MIN_SPAWN_DELAY_MS + scaledSeed * (MAX_SPAWN_DELAY_MS - MIN_SPAWN_DELAY_MS);
 
 const digitsToNumber = (digits: ReadonlyArray<Digit>): number =>
     digits.reduce<number>((acc, d) => acc * 2 + d, 0);
@@ -96,6 +109,45 @@ class FlipDigit implements Action {
                 i === this.index ? ((1 - d) as Digit) : d,
             ),
         };
+    }
+}
+
+/**
+ * A pure, seedable pseudo-random number generator (Linear Congruential Generator).
+ * Given the same seed, hash() always produces the same next value 
+ * making randomness deterministic and testable rather than a hidden side effect.
+ */
+class RNG {
+    // LCG constants 
+    private static m = 0x80000000; // 2^31
+    private static a = 1103515245;
+    private static c = 12345;
+
+    /** Computes the next seed from the current one. Pure function. */
+    static hash(seed: number): number {
+        return (RNG.a * seed + RNG.c) % RNG.m;
+    }
+
+    /** Scales a seed to a value in [0, 1). Pure function. */
+    static scale(seed: number): number {
+        return seed / (RNG.m - 1);
+    }
+}
+
+class SpawnTarget implements Action {
+    apply(s: State): State {
+        const nextValue = TARGET_SEQUENCE[s.nextTargetIndex];
+        return nextValue === undefined
+            ? s
+            : {
+                  ...s,
+                  targets: [
+                      ...s.targets,
+                      { value: nextValue, y: TargetConfig.SPAWN_Y },
+                  ],
+                  nextTargetIndex: s.nextTargetIndex + 1,
+                  seed: RNG.hash(s.seed), // advance the seed deterministically
+              };
     }
 }
 
@@ -125,12 +177,23 @@ class Tick implements Action {
         const targetsAfterCollision = isMatch
             ? movedTargets.slice(1)
             : movedTargets;
-            
-        // Spawning: independent of collision, purely time-based
-        const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
-        const readyToSpawn =
-            ticksSinceLastSpawn >= TargetConfig.SPAWN_INTERVAL_TICKS &&
-            s.nextTargetIndex < TARGET_SEQUENCE.length;
+        
+        // advance seed every tick regardless,
+        // spawn when the scaled value crosses a threshold.
+        const nextSeed = RNG.hash(s.seed);
+        const roll = RNG.scale(nextSeed);
+        const spawnThresholdPerTick =
+            Constants.TICK_RATE_MS /
+            ((MIN_SPAWN_DELAY_MS + MAX_SPAWN_DELAY_MS) / 2);
+
+        const canSpawnMore = s.nextTargetIndex < TARGET_SEQUENCE.length;
+        const readyToSpawn = canSpawnMore && roll < spawnThresholdPerTick;
+
+        // // Spawning: independent of collision, purely time-based
+        // const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
+        // const readyToSpawn =
+        //     ticksSinceLastSpawn >= TargetConfig.SPAWN_INTERVAL_TICKS &&
+        //     s.nextTargetIndex < TARGET_SEQUENCE.length;
 
         const targetsAfterSpawn = readyToSpawn
             ? [
@@ -150,7 +213,7 @@ class Tick implements Action {
                     nextTargetIndex: readyToSpawn
                         ? s.nextTargetIndex + 1
                         : s.nextTargetIndex,
-                    ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
+                    seed: nextSeed,
                     gameEnd: isMissedAtLine ? true : s.gameEnd,
                 };
     }
