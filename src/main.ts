@@ -58,7 +58,7 @@ type State = Readonly<{
     targets: ReadonlyArray<FallingTarget>;
     nextTargetIndex: number;      // position in TARGET_SEQUENCE for next spawn
     seed: number; // current RNG seed
-    //ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
+    ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
     gameEnd: boolean;
 }>;
 
@@ -73,17 +73,21 @@ const TargetConfig = {
 
 // Minimum ms between spawns so a target clears its own height before the
 // next one spawns at the same y position, plus a small safety margin.
-const MIN_SPAWN_DELAY_MS =
-    ((Target.HEIGHT + 20) / TargetConfig.FALL_SPEED) * Constants.TICK_RATE_MS;
+// const MIN_SPAWN_DELAY_MS =
+//     ((Target.HEIGHT + 20) / TargetConfig.FALL_SPEED) * Constants.TICK_RATE_MS;
 
-const MAX_SPAWN_DELAY_MS = MIN_SPAWN_DELAY_MS + 1500;
+const MIN_SPAWN_DELAY_MS = 2000;
+const MAX_SPAWN_DELAY_MS = 3000
 
+const MIN_SPAWN_DELAY_TICKS = Math.ceil(
+    MIN_SPAWN_DELAY_MS / Constants.TICK_RATE_MS,
+);
 const initialState: State = {
     digits: Array(Constants.DIGIT_COUNT).fill(0),
     targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
     nextTargetIndex: 1,
-    seed: 42,
-    //ticksSinceLastSpawn: 0,
+    seed: Date.now(), // varies per run
+    ticksSinceLastSpawn: 0,
     gameEnd: false,
 };
 
@@ -185,15 +189,14 @@ class Tick implements Action {
         const spawnThresholdPerTick =
             Constants.TICK_RATE_MS /
             ((MIN_SPAWN_DELAY_MS + MAX_SPAWN_DELAY_MS) / 2);
-
+        
+        const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
         const canSpawnMore = s.nextTargetIndex < TARGET_SEQUENCE.length;
-        const readyToSpawn = canSpawnMore && roll < spawnThresholdPerTick;
-
-        // // Spawning: independent of collision, purely time-based
-        // const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
-        // const readyToSpawn =
-        //     ticksSinceLastSpawn >= TargetConfig.SPAWN_INTERVAL_TICKS &&
-        //     s.nextTargetIndex < TARGET_SEQUENCE.length;
+        const pastMinGap = ticksSinceLastSpawn >= MIN_SPAWN_DELAY_TICKS;
+        // Spawn either from the normal random timer, or immediately
+        // because the previous target was just resolved.
+        const readyToSpawn =
+            canSpawnMore && pastMinGap && roll < spawnThresholdPerTick;
 
         const targetsAfterSpawn = readyToSpawn
             ? [
@@ -214,6 +217,7 @@ class Tick implements Action {
                         ? s.nextTargetIndex + 1
                         : s.nextTargetIndex,
                     seed: nextSeed,
+                    ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
                     gameEnd: isMissedAtLine ? true : s.gameEnd,
                 };
     }
