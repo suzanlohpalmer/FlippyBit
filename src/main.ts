@@ -42,7 +42,7 @@ const Target = {
 
 const Constants = {
     DIGIT_COUNT: 8,
-    TICK_RATE_MS: 500, // Might need to change this!
+    TICK_RATE_MS: 20, // for smooth animation
 } as const;
 
 // types
@@ -67,7 +67,7 @@ type State = Readonly<{
 const TARGET_SEQUENCE: ReadonlyArray<number> = [13, 5, 10, 2, 15, 8];
 
 const TargetConfig = {
-    FALL_SPEED: 6, // px per tick
+    FALL_SPEED: 0.24, // px per tick (12px)
     CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
     SPAWN_Y: 20,
     SPAWN_INTERVAL_TICKS: 8,
