@@ -16,7 +16,6 @@ import "./style.css";
 
 import {
     Observable,
-    catchError,
     filter,
     fromEvent,
     interval,
@@ -66,8 +65,8 @@ type State = Readonly<{
 }>;
 
 const TargetConfig = {
-    BASE_FALL_SPEED: 0.24, // starting px per tick
-    MAX_FALL_SPEED: 2, // so it doesn't become unplayably fast
+    BASE_FALL_SPEED: 0.24,  // starting px per tick
+    MAX_FALL_SPEED: 2,      // so it doesn't become unplayably fast
     SPEED_RAMP_TICKS: 3000, // ticks (≈30s at 20ms/tick) to reach max speed
     CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 60,
     SPAWN_Y: 20,
@@ -116,29 +115,29 @@ const currentFallSpeed = (ticksSurvived: number): number => {
     );
 };
 
-// actions
-interface Action {
-    apply(s: State): State;
-}
+// // actions
+// interface Action {
+//     apply(s: State): State;
+// }
 
-class FlipDigit implements Action {
-    constructor(public readonly index: number) {}
+// class FlipDigit implements Action {
+//     constructor(public readonly index: number) {}
 
-    apply(s: State): State {
-        return {
-            ...s,
-            digits: s.digits.map((d, i) =>
-                i === this.index ? ((1 - d) as Digit) : d,
-            ),
-        };
-    }
-}
+//     apply(s: State): State {
+//         return {
+//             ...s,
+//             digits: s.digits.map((d, i) =>
+//                 i === this.index ? ((1 - d) as Digit) : d,
+//             ),
+//         };
+//     }
+// }
 
-class TogglePause implements Action {
-    apply(s: State): State {
-        return { ...s, isPaused: !s.isPaused };
-    }
-}
+// class TogglePause implements Action {
+//     apply(s: State): State {
+//         return { ...s, isPaused: !s.isPaused };
+//     }
+// }
 
 /**
  * A pure, seedable pseudo-random number generator (Linear Congruential Generator).
@@ -162,92 +161,152 @@ class RNG {
     }
 }
 
-class Tick implements Action {
-    constructor(public readonly elapsed: number) {}
+/**
+ * Generic, curried: returns a new array with the element at `index`
+ * transformed by `f`, leaving every other element untouched. Works for any
+ * element type `T`, so it covers both the digit row and (potentially) the
+ * target list without writing the same map-and-check logic twice.
+ */
+const updateAt =
+    <T>(index: number, f: (item: T) => T) =>
+    (xs: ReadonlyArray<T>): ReadonlyArray<T> =>
+        xs.map((x, i) => (i === index ? f(x) : x));
 
-    apply(s: State): State {
-        // falling-target movement & collision logic will live here
-        const movedTargets = s.targets.map(t => ({
-            ...t,
-            y: t.y + currentFallSpeed(s.ticksSurvived),
-        }));
+/**
+ * Minimal left-to-right function composition for unary functions.
+ * Lets a pipeline of small State -> State stages read as a single
+ * declarative expression instead of one large nested function body.
+ */
+const pipe2 =
+    <A, B, C>(f: (a: A) => B, g: (b: B) => C) =>
+    (a: A): C =>
+        g(f(a));
 
-        const lowest = movedTargets[0];
+type Action = (s: State) => State;
+ 
+/**
+ * Curried: fixing `index` first yields a reusable State -> State action.
+ * Used identically by both the keyboard handler and the mouse handler
+ * (see flip$ and digitClick$ below), so the same partially-applied
+ * function backs two independent input streams.
+ */
+const flipDigit =
+    (index: number) =>
+    (s: State): State => ({
+        ...s,
+        digits: updateAt<Digit>(index, d => (1 - d) as Digit)(s.digits),
+    });
+ 
+const togglePause = (s: State): State => ({ ...s, isPaused: !s.isPaused });
 
-        // Check for a match every tick, regardless of position
-        const isMatch =
-            lowest !== undefined && digitsToNumber(s.digits) === lowest.value;
+/**
+ * Curried: fixing `speed` yields a reusable FallingTarget -> FallingTarget
+ * transform that can be mapped over any list of targets.
+ */
+const moveTarget =
+    (speed: number) =>
+    (t: FallingTarget): FallingTarget => ({
+        ...t,
+        y: t.y + speed,
+    });
 
-        // Only a miss if it reached the line w/o a match
-        const isMissedAtLine =
-            lowest !== undefined &&
-            !isMatch &&
-            lowest.y >= TargetConfig.CHECK_LINE_Y;
+/**
+ * Curried predicate: fixing `threshold` yields a reusable "did this roll
+ * clear the bar" test, used when deciding whether to spawn a new target.
+ */
+const rollBelow =
+    (threshold: number) =>
+    (roll: number): boolean =>
+        roll < threshold;
+ 
+/** Stage 1 of tick: move every target down by the current fall speed. */
+const applyMovement = (s: State): State => ({
+    ...s,
+    targets: s.targets.map(moveTarget(currentFallSpeed(s.ticksSurvived))),
+});
 
-        const targetsAfterCollision = isMatch
-            ? movedTargets.slice(1)
-            : movedTargets;
+/**
+ * Stage 2 of tick: resolve the lowest target against the player's current
+ * digit row — award a match, remove the matched target, or end the game
+ * if it passed the check line unmatched.
+ */
+const resolveCollisions = (s: State): State => {
+    const lowest = s.targets[0];
+ 
+    const isMatch =
+        lowest !== undefined && digitsToNumber(s.digits) === lowest.value;
+ 
+    const isMissedAtLine =
+        lowest !== undefined &&
+        !isMatch &&
+        lowest.y >= TargetConfig.CHECK_LINE_Y;
+ 
+    return {
+        ...s,
+        targets: isMatch ? s.targets.slice(1) : s.targets,
+        score: isMatch ? s.score + 1 : s.score,
+        gameEnd: isMissedAtLine ? true : s.gameEnd,
+    };
+};
 
-        // Two independent, chained RNG rolls: one decides *whether* to spawn
-        // this tick, a second decides *what value* the new target gets.
-        // Chaining rather than reusing one roll keeps "when" and "what"
-        // statistically uncorrelated.
-        // Roll 1: decide whether to spawn this tick
-        const spawnRollSeed = RNG.hash(s.seed);
-        const spawnRoll = RNG.scale(spawnRollSeed);
-        const spawnThresholdPerTick =
-            Constants.TICK_RATE_MS /
-            ((MIN_SPAWN_DELAY_MS + MAX_SPAWN_DELAY_MS) / 2);
+/**
+ * Stage 3 of tick: possibly spawn a new falling target and advance the
+ * survival/seed bookkeeping.
+ *
+ * Two independent, chained RNG rolls: one decides *whether* to spawn this
+ * tick, a second decides *what value* the new target gets. Chaining rather
+ * than reusing one roll keeps "when" and "what" statistically uncorrelated.
+ */
+const maybeSpawn = (s: State): State => {
+    const spawnRollSeed = RNG.hash(s.seed);
+    const spawnRoll = RNG.scale(spawnRollSeed);
+    const spawnThresholdPerTick =
+        Constants.TICK_RATE_MS /
+        ((MIN_SPAWN_DELAY_MS + MAX_SPAWN_DELAY_MS) / 2);
+ 
+    const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
+    const pastMinGap = ticksSinceLastSpawn >= MIN_SPAWN_DELAY_TICKS;
+    const readyToSpawn = pastMinGap && rollBelow(spawnThresholdPerTick)(spawnRoll);
+ 
+    const valueRollSeed = RNG.hash(spawnRollSeed);
+    const spawnedValue = seedToTargetValue(RNG.scale(valueRollSeed));
+ 
+    const finalSeed = readyToSpawn ? valueRollSeed : spawnRollSeed;
+ 
+    const targetsAfterSpawn = readyToSpawn
+        ? [...s.targets, { value: spawnedValue, y: TargetConfig.SPAWN_Y }]
+        : s.targets;
+ 
+    return {
+        ...s,
+        targets: targetsAfterSpawn,
+        seed: finalSeed,
+        ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
+        ticksSurvived: s.ticksSurvived + 1,
+    };
+};
 
-        const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
-        const pastMinGap = ticksSinceLastSpawn >= MIN_SPAWN_DELAY_TICKS;
-        // Spawn either from the normal random timer, or immediately
-        // because the previous target was just resolved.
-        const readyToSpawn = pastMinGap && spawnRoll < spawnThresholdPerTick;
-
-        // Roll 2: independently decide the spawned target's value
-        const valueRollSeed = RNG.hash(spawnRollSeed);
-        const spawnedValue = seedToTargetValue(RNG.scale(valueRollSeed));
-
-        const finalSeed = readyToSpawn ? valueRollSeed : spawnRollSeed;
-
-        const targetsAfterSpawn = readyToSpawn
-            ? [
-                  ...targetsAfterCollision,
-                  {
-                      value: spawnedValue,
-                      y: TargetConfig.SPAWN_Y,
-                  },
-              ]
-            : targetsAfterCollision;
-
-        return s.isPaused || s.gameEnd
-            ? s
-            : {
-                  ...s,
-                  targets: targetsAfterSpawn,
-                  seed: finalSeed,
-                  ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
-                  ticksSurvived: s.ticksSurvived + 1,
-                  score: isMatch ? s.score + 1 : s.score,
-                  gameEnd: isMissedAtLine ? true : s.gameEnd,
-              };
-    }
-}
-
-// reducer just delegates
-const reduceState = (s: State, action: Action): State => action.apply(s);
-
+/**
+ * The per-frame action: composes movement, collision resolution, and
+ * spawning into a single declarative pipeline. A no-op while paused or
+ * once the game has ended.
+ */
+const tick: Action = (s: State): State =>
+    s.isPaused || s.gameEnd
+        ? s
+        : pipe2(pipe2(applyMovement, resolveCollisions), maybeSpawn)(s);
+ 
+// reducer just applies the action
+const reduceState = (s: State, action: Action): State => action(s);
+ 
 // streams
 const flip$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter(e => /^[1-8]$/.test(e.key)),
-    map(e => new FlipDigit(Number(e.key) - 1)),
+    map(e => flipDigit(Number(e.key) - 1)),
 );
-
-const tick$ = interval(Constants.TICK_RATE_MS).pipe(
-    map(elapsed => new Tick(elapsed)),
-);
-
+ 
+const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => tick));
+ 
 const canvasElement = document.querySelector("#svgCanvas") as SVGSVGElement;
 
 /**
@@ -272,7 +331,7 @@ const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
             : -1;
     }),
     filter(index => index !== -1),
-    map(index => new FlipDigit(index)),
+    map(index => flipDigit(index)),
 );
 
 const restartKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
@@ -281,8 +340,8 @@ const restartKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
 
 const pauseKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter(e => e.key === "p" || e.key === "P"),
-    map(() => new TogglePause()),
-);
+    map(() => togglePause))
+;
 
 export const gameSession$ = (): Observable<State> =>
     merge(flip$, tick$, digitClick$, pauseKey$).pipe(
@@ -354,6 +413,25 @@ const createSvgElement = (
     const elem = document.createElementNS(namespace, name) as SVGElement;
     Object.entries(props).forEach(([k, v]) => elem.setAttribute(k, v));
     return elem;
+};
+
+/**
+ * Draws a labelled box (rect + centred text) and appends both to `svg`.
+ * Shared by the falling-target and digit-toggle rendering, which both
+ * followed this exact rect+text+append pattern with only the props and
+ * label differing.
+ */
+const drawLabeledBox = (
+    svg: SVGSVGElement,
+    rectProps: Record<string, string>,
+    textProps: Record<string, string>,
+    label: string,
+): void => {
+    const box = createSvgElement(svg.namespaceURI, "rect", rectProps);
+    const text = createSvgElement(svg.namespaceURI, "text", textProps);
+    text.textContent = label;
+    svg.appendChild(box);
+    svg.appendChild(text);
 };
 
 const render = (): ((s: State) => void) => {
