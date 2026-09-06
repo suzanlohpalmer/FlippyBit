@@ -66,8 +66,8 @@ type State = Readonly<{
 
 const TargetConfig = {
     BASE_FALL_SPEED: 0.24, // starting px per tick
-    MAX_FALL_SPEED: 1.2,   // so it doesn't become unplayably fast
-    SPEED_RAMP_TICKS: 1500, // ticks (≈30s at 20ms/tick) to reach max speed
+    MAX_FALL_SPEED: 2,   // so it doesn't become unplayably fast
+    SPEED_RAMP_TICKS: 3000, // ticks (≈30s at 20ms/tick) to reach max speed
     CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
     SPAWN_Y: 20,
     //SPAWN_INTERVAL_TICKS: 8,
