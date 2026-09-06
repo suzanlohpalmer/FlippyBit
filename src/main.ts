@@ -60,6 +60,7 @@ type State = Readonly<{
     nextTargetIndex: number;      // position in TARGET_SEQUENCE for next spawn
     seed: number; // current RNG seed
     ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
+    score: number, 
     gameEnd: boolean;
 }>;
 
@@ -219,6 +220,7 @@ class Tick implements Action {
                         : s.nextTargetIndex,
                     seed: nextSeed,
                     ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
+                    score: isMatch ? s.score + 1 : s.score,
                     gameEnd: isMissedAtLine ? true : s.gameEnd,
                 };
     }
@@ -269,6 +271,7 @@ const makeInitialState = (): State => ({
     nextTargetIndex: 1,
     seed: Date.now(),
     ticksSinceLastSpawn: 0,
+    score: 0,
     gameEnd: false,
 });
 
@@ -356,6 +359,11 @@ const render = (): ((s: State) => void) => {
      */
     return (s: State) => {
         svg.innerHTML = ""; // clear last frame before drawing this one
+
+        // Update score display
+        const scoreElement = document.querySelector("#scoreText") as HTMLElement;
+        scoreElement.textContent = String(s.score);
+
 
         const debugText = createSvgElement(svg.namespaceURI, "text", {
             x: "10",
