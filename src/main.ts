@@ -422,6 +422,8 @@ const clearDynamicChildren = (svg: SVGSVGElement): void => {
         .forEach(child => svg.removeChild(child));
 };
 
+
+
 /**
  * Creates an SVG element with the given properties.
  *
@@ -487,6 +489,21 @@ const render = (): ((s: State) => void) => {
             "#scoreText",
         ) as HTMLElement;
         scoreElement.textContent = String(s.score);
+
+        // Live readout of the player's current binary value
+        const valueText = createSvgElement(svg.namespaceURI, "text", {
+            x: "10",
+            y: "20",
+            "font-family": "monospace",
+            "font-size": "14",
+            fill: "black",
+        });
+        const currentValue = digitsToNumber(s.digits);
+        valueText.textContent = `Value: ${currentValue} (0x${currentValue
+            .toString(16)
+            .toUpperCase()
+            .padStart(2, "0")})`;
+        svg.appendChild(valueText);
 
         // check line
         const checkLine = createSvgElement(svg.namespaceURI, "line", {
