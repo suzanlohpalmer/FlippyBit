@@ -57,21 +57,40 @@ type FallingTarget = Readonly<{
 type State = Readonly<{
     digits: ReadonlyArray<Digit>; // 8-bit row, index 0 = MSB
     targets: ReadonlyArray<FallingTarget>;
-    nextTargetIndex: number;      // position in TARGET_SEQUENCE for next spawn
     seed: number; // current RNG seed
     ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
+    ticksSurvived: number,
     score: number, 
     gameEnd: boolean;
 }>;
 
-const TARGET_SEQUENCE: ReadonlyArray<number> = [13, 5, 10, 2, 15, 8];
-
 const TargetConfig = {
-    FALL_SPEED: 0.24, // px per tick (12px)
+    BASE_FALL_SPEED: 0.24, // starting px per tick
+    MAX_FALL_SPEED: 1.2,   // so it doesn't become unplayably fast
+    SPEED_RAMP_TICKS: 1500, // ticks (≈30s at 20ms/tick) to reach max speed
     CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
     SPAWN_Y: 20,
-    SPAWN_INTERVAL_TICKS: 8,
+    //SPAWN_INTERVAL_TICKS: 8,
 } as const;
+
+const makeInitialState = (): State => {
+    const startSeed = Date.now();
+    const firstValueSeed = RNG.hash(startSeed);
+    return {
+        digits: Array(Constants.DIGIT_COUNT).fill(0),
+        targets: [
+            {
+                value: seedToTargetValue(RNG.scale(firstValueSeed)),
+                y: TargetConfig.SPAWN_Y,
+            },
+        ],
+        seed: firstValueSeed,
+        ticksSinceLastSpawn: 0,
+        ticksSurvived: 0,
+        score: 0,
+        gameEnd: false,
+    };
+};
 
 // Minimum ms between spawns so a target clears its own height before the
 // next one spawns at the same y position, plus a small safety margin.
@@ -97,8 +116,21 @@ const MIN_SPAWN_DELAY_TICKS = Math.ceil(
 const seedToSpawnDelay = (scaledSeed: number): number =>
     MIN_SPAWN_DELAY_MS + scaledSeed * (MAX_SPAWN_DELAY_MS - MIN_SPAWN_DELAY_MS);
 
+/** Maps a [0,1) scaled seed value to a random hex digit 0-15. Pure. */
+const seedToTargetValue = (scaledSeed: number): number =>
+    Math.floor(scaledSeed * 16);
+
 const digitsToNumber = (digits: ReadonlyArray<Digit>): number =>
     digits.reduce<number>((acc, d) => acc * 2 + d, 0);
+
+/** Fall speed increases linearly with survival time, capped at MAX_FALL_SPEED. Pure. */
+const currentFallSpeed = (ticksSurvived: number): number => {
+    const progress = Math.min(ticksSurvived / TargetConfig.SPEED_RAMP_TICKS, 1);
+    return (
+        TargetConfig.BASE_FALL_SPEED +
+        progress * (TargetConfig.MAX_FALL_SPEED - TargetConfig.BASE_FALL_SPEED)
+    );
+};
 
 // actions
 interface Action {
@@ -140,23 +172,6 @@ class RNG {
     }
 }
 
-class SpawnTarget implements Action {
-    apply(s: State): State {
-        const nextValue = TARGET_SEQUENCE[s.nextTargetIndex];
-        return nextValue === undefined
-            ? s
-            : {
-                  ...s,
-                  targets: [
-                      ...s.targets,
-                      { value: nextValue, y: TargetConfig.SPAWN_Y },
-                  ],
-                  nextTargetIndex: s.nextTargetIndex + 1,
-                  seed: RNG.hash(s.seed), // advance the seed deterministically
-              };
-    }
-}
-
 class Tick implements Action {
     constructor(public readonly elapsed: number) {}
 
@@ -164,7 +179,7 @@ class Tick implements Action {
         // falling-target movement & collision logic will live here
         const movedTargets = s.targets.map((t) => ({
             ...t,
-            y: t.y + TargetConfig.FALL_SPEED,
+            y: t.y + currentFallSpeed(s.ticksSurvived),
         }));
 
         const lowest = movedTargets[0];
@@ -184,27 +199,31 @@ class Tick implements Action {
             ? movedTargets.slice(1)
             : movedTargets;
         
-        // advance seed every tick regardless,
-        // spawn when the scaled value crosses a threshold.
-        const nextSeed = RNG.hash(s.seed);
-        const roll = RNG.scale(nextSeed);
+        // Roll 1: decide whether to spawn this tick
+        const spawnRollSeed = RNG.hash(s.seed);
+        const spawnRoll = RNG.scale(spawnRollSeed);
         const spawnThresholdPerTick =
             Constants.TICK_RATE_MS /
             ((MIN_SPAWN_DELAY_MS + MAX_SPAWN_DELAY_MS) / 2);
         
         const ticksSinceLastSpawn = s.ticksSinceLastSpawn + 1;
-        const canSpawnMore = s.nextTargetIndex < TARGET_SEQUENCE.length;
         const pastMinGap = ticksSinceLastSpawn >= MIN_SPAWN_DELAY_TICKS;
         // Spawn either from the normal random timer, or immediately
         // because the previous target was just resolved.
-        const readyToSpawn =
-            canSpawnMore && pastMinGap && roll < spawnThresholdPerTick;
+        const readyToSpawn = pastMinGap && spawnRoll < spawnThresholdPerTick;
+
+        // Roll 2: independently decide the spawned target's value
+        const valueRollSeed = RNG.hash(spawnRollSeed);
+        const spawnedValue = seedToTargetValue(RNG.scale(valueRollSeed));
+
+        const finalSeed = readyToSpawn ? valueRollSeed : spawnRollSeed;
+
 
         const targetsAfterSpawn = readyToSpawn
             ? [
                   ...targetsAfterCollision,
                   {
-                      value: TARGET_SEQUENCE[s.nextTargetIndex],
+                      value: spawnedValue,
                       y: TargetConfig.SPAWN_Y,
                   },
               ]
@@ -215,11 +234,9 @@ class Tick implements Action {
               : {
                     ...s,
                     targets: targetsAfterSpawn,
-                    nextTargetIndex: readyToSpawn
-                        ? s.nextTargetIndex + 1
-                        : s.nextTargetIndex,
-                    seed: nextSeed,
+                    seed: finalSeed,
                     ticksSinceLastSpawn: readyToSpawn ? 0 : ticksSinceLastSpawn,
+                    ticksSurvived: s.ticksSurvived + 1,
                     score: isMatch ? s.score + 1 : s.score,
                     gameEnd: isMissedAtLine ? true : s.gameEnd,
                 };
@@ -264,16 +281,6 @@ const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
 const restartKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter((e) => e.key === "r" || e.key === "R"),
 );
-
-const makeInitialState = (): State => ({
-    digits: Array(Constants.DIGIT_COUNT).fill(0),
-    targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
-    nextTargetIndex: 1,
-    seed: Date.now(),
-    ticksSinceLastSpawn: 0,
-    score: 0,
-    gameEnd: false,
-});
 
 export const gameSession$ = (): Observable<State> =>
     merge(flip$, tick$, digitClick$).pipe(scan(reduceState, makeInitialState()));
@@ -376,7 +383,7 @@ const render = (): ((s: State) => void) => {
             "font-size": "14",
             fill: "black",
         });
-        debugText.textContent = `value=${digitsToNumber(s.digits)} gameEnd=${s.gameEnd}`;
+        debugText.textContent = `value=${digitsToNumber(s.digits)} gameEnd=${s.gameEnd} speed=${currentFallSpeed(s.ticksSurvived).toFixed(2)}`;
         svg.appendChild(debugText);
 
         // check line 
