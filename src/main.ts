@@ -445,25 +445,6 @@ const createSvgElement = (
     return elem;
 };
 
-/**
- * Draws a labelled box (rect + centred text) and appends both to 'svg'.
- * Shared by the falling-target and digit-toggle rendering, which both
- * followed this exact rect+text+append pattern with only the props and
- * label differing.
- */
-const drawLabeledBox = (
-    svg: SVGSVGElement,
-    rectProps: Record<string, string>,
-    textProps: Record<string, string>,
-    label: string,
-): void => {
-    const box = createSvgElement(svg.namespaceURI, "rect", rectProps);
-    const text = createSvgElement(svg.namespaceURI, "text", textProps);
-    text.textContent = label;
-    svg.appendChild(box);
-    svg.appendChild(text);
-};
-
 const render = (): ((s: State) => void) => {
     // One-time static screen drawn immediately on load, before any game
     // state exists — replaced by the live game on the first render() call.
