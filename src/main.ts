@@ -69,7 +69,7 @@ const TargetConfig = {
     BASE_FALL_SPEED: 0.24, // starting px per tick
     MAX_FALL_SPEED: 2, // so it doesn't become unplayably fast
     SPEED_RAMP_TICKS: 3000, // ticks (≈30s at 20ms/tick) to reach max speed
-    CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
+    CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 60,
     SPAWN_Y: 20,
 } as const;
 
@@ -381,16 +381,6 @@ const render = (): ((s: State) => void) => {
             "#scoreText",
         ) as HTMLElement;
         scoreElement.textContent = String(s.score);
-
-        const debugText = createSvgElement(svg.namespaceURI, "text", {
-            x: "10",
-            y: "20",
-            "font-family": "monospace",
-            "font-size": "14",
-            fill: "black",
-        });
-        debugText.textContent = `value=${digitsToNumber(s.digits)} gameEnd=${s.gameEnd} speed=${currentFallSpeed(s.ticksSurvived).toFixed(2)}`;
-        svg.appendChild(debugText);
 
         // check line
         const checkLine = createSvgElement(svg.namespaceURI, "line", {
