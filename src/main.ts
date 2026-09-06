@@ -236,8 +236,30 @@ const tick$ = interval(Constants.TICK_RATE_MS).pipe(
     map((elapsed) => new Tick(elapsed)),
 );
 
+const canvasElement = document.querySelector("#svgCanvas") as SVGSVGElement;
+
+const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
+    map((e) => {
+        const rect = canvasElement.getBoundingClientRect();
+        const scaleX = Viewport.CANVAS_WIDTH / rect.width;
+        const scaleY = Viewport.CANVAS_HEIGHT / rect.height;
+        const svgX = (e.clientX - rect.left) * scaleX;
+        const svgY = (e.clientY - rect.top) * scaleY;
+        const digitWidth = Viewport.CANVAS_WIDTH / Constants.DIGIT_COUNT;
+        const digitRowTop = Viewport.CANVAS_HEIGHT - 50;
+        const digitRowBottom = digitRowTop + 40;
+        const isInDigitRow = svgY >= digitRowTop && svgY <= digitRowBottom;
+        const index = Math.floor(svgX / digitWidth);
+        return isInDigitRow && index >= 0 && index < Constants.DIGIT_COUNT
+            ? index
+            : -1;
+    }),
+    filter((index) => index !== -1),
+    map((index) => new FlipDigit(index)),
+);
+
 export const state$ = (): Observable<State> =>
-    merge(flip$, tick$).pipe(scan(reduceState, initialState));
+    merge(flip$, tick$, digitClick$).pipe(scan(reduceState, initialState));
 
 
 /**
