@@ -23,6 +23,7 @@ import {
     map,
     merge,
     scan,
+    startWith,
     switchMap,
     take,
 } from "rxjs";
@@ -82,14 +83,14 @@ const MAX_SPAWN_DELAY_MS = 3000
 const MIN_SPAWN_DELAY_TICKS = Math.ceil(
     MIN_SPAWN_DELAY_MS / Constants.TICK_RATE_MS,
 );
-const initialState: State = {
-    digits: Array(Constants.DIGIT_COUNT).fill(0),
-    targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
-    nextTargetIndex: 1,
-    seed: Date.now(), // varies per run
-    ticksSinceLastSpawn: 0,
-    gameEnd: false,
-};
+// const initialState: State = {
+//     digits: Array(Constants.DIGIT_COUNT).fill(0),
+//     targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
+//     nextTargetIndex: 1,
+//     seed: Date.now(), // varies per run
+//     ticksSinceLastSpawn: 0,
+//     gameEnd: false,
+// };
 
 /** Maps a [0,1) scaled seed value into a spawn-delay range. Pure. */
 const seedToSpawnDelay = (scaledSeed: number): number =>
@@ -258,8 +259,29 @@ const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
     map((index) => new FlipDigit(index)),
 );
 
+const restartKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
+    filter((e) => e.key === "r" || e.key === "R"),
+);
+
+const makeInitialState = (): State => ({
+    digits: Array(Constants.DIGIT_COUNT).fill(0),
+    targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
+    nextTargetIndex: 1,
+    seed: Date.now(),
+    ticksSinceLastSpawn: 0,
+    gameEnd: false,
+});
+
+export const gameSession$ = (): Observable<State> =>
+    merge(flip$, tick$, digitClick$).pipe(scan(reduceState, makeInitialState()));
+
 export const state$ = (): Observable<State> =>
-    merge(flip$, tick$, digitClick$).pipe(scan(reduceState, initialState));
+    merge(restartKey$).pipe(
+        // emit once immediately so the game starts right away too,
+        // not only after the first 'r' press
+        startWith(null),
+        switchMap(() => gameSession$()),
+    );
 
 
 /**
@@ -405,6 +427,17 @@ const render = (): ((s: State) => void) => {
             svg.appendChild(bitText);
         });
 
+        const instructionText = createSvgElement(svg.namespaceURI, "text", {
+            x: `${Viewport.CANVAS_WIDTH / 2}`,
+            y: "16",
+            "text-anchor": "middle",
+            "font-family": "monospace",
+            "font-size": "12",
+            fill: "black",
+        });
+        instructionText.textContent = "Press R to restart";
+        svg.appendChild(instructionText);
+
         // Game over overlay
         s.gameEnd && svg.appendChild(
             (() => {
@@ -423,12 +456,21 @@ const render = (): ((s: State) => void) => {
     };
 };
 
-// export const state$ = (): Observable<State> => {
-//     /** Determines the rate of time steps */
-//     const tick$ = interval(Constants.TICK_RATE_MS);
-
-//     return tick$.pipe(scan((s: State) => ({ gameEnd: false }), initialState));
-// };
+const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
+svg.setAttribute(
+    "viewBox",
+    `0 0 ${Viewport.CANVAS_WIDTH} ${Viewport.CANVAS_HEIGHT}`,
+);
+const startText = createSvgElement(svg.namespaceURI, "text", {
+    x: `${Viewport.CANVAS_WIDTH / 2}`,
+    y: `${Viewport.CANVAS_HEIGHT / 2}`,
+    "text-anchor": "middle",
+    "font-family": "monospace",
+    "font-size": "24",
+    fill: "black",
+});
+startText.textContent = "Click to start";
+svg.appendChild(startText);
 
 // The following simply runs your main function on window load.  Make sure to leave it in place.
 // You should not need to change this, beware if you are.
