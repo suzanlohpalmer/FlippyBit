@@ -27,7 +27,13 @@ import {
     take,
 } from "rxjs";
 
-/** Constants */
+/** 
+ * Constants 
+ * Config values grouped into 'as const' objects rather than loose
+ * top-level constants, so each group reads as one cohesive unit (e.g.
+ * every canvas dimension lives under 'Viewport') and every property is
+ * frozen instead of a widened 'number'.
+ */
 
 const Viewport = {
     CANVAS_WIDTH: 600,
@@ -72,6 +78,11 @@ const TargetConfig = {
     SPAWN_Y: 20,
 } as const;
 
+/**
+ * Builds a brand-new game state. Called once per session (see
+ * 'gameSession$'), so every run starts from a fresh, deterministic-given-
+ * its-seed snapshot rather than mutating some shared object.
+ */
 const makeInitialState = (): State => {
     const startSeed = Date.now();
     const firstValueSeed = RNG.hash(startSeed);
@@ -103,6 +114,7 @@ const MIN_SPAWN_DELAY_TICKS = Math.ceil(
 const seedToTargetValue = (scaledSeed: number): number =>
     Math.floor(scaledSeed * 16);
 
+/** Interprets the digit row as a single binary number, MSB first. Pure. */
 const digitsToNumber = (digits: ReadonlyArray<Digit>): number =>
     digits.reduce<number>((acc, d) => acc * 2 + d, 0);
 
@@ -115,34 +127,14 @@ const currentFallSpeed = (ticksSurvived: number): number => {
     );
 };
 
-// // actions
-// interface Action {
-//     apply(s: State): State;
-// }
-
-// class FlipDigit implements Action {
-//     constructor(public readonly index: number) {}
-
-//     apply(s: State): State {
-//         return {
-//             ...s,
-//             digits: s.digits.map((d, i) =>
-//                 i === this.index ? ((1 - d) as Digit) : d,
-//             ),
-//         };
-//     }
-// }
-
-// class TogglePause implements Action {
-//     apply(s: State): State {
-//         return { ...s, isPaused: !s.isPaused };
-//     }
-// }
-
 /**
- * A pure, seedable pseudo-random number generator (Linear Congruential Generator).
- * Given the same seed, hash() always produces the same next value
- * making randomness deterministic and testable rather than a hidden side effect.
+ * A pure, seedable pseudo-random number generator
+ * Given the same seed, hash() always produces the same next
+ * value, making randomness deterministic and testable rather than a
+ * hidden side effect. Expressed as a plain object of functions (not a
+ * class) since there is no instance state at all
+ * every call takes a seed in and returns a value out, 
+ * with nothing stored between calls.
  */
 class RNG {
     // LCG constants
@@ -162,9 +154,9 @@ class RNG {
 }
 
 /**
- * Generic, curried: returns a new array with the element at `index`
- * transformed by `f`, leaving every other element untouched. Works for any
- * element type `T`, so it covers both the digit row and (potentially) the
+ * returns a new array with the element at 'index'
+ * transformed by 'f', leaving every other element untouched. Works for any
+ * element type 'T', so it covers both the digit row and the
  * target list without writing the same map-and-check logic twice.
  */
 const updateAt =
@@ -182,13 +174,19 @@ const pipe2 =
     (a: A): C =>
         g(f(a));
 
+/**
+ * An action is any pure transformation the game can apply to its state
+ * for a single event (a key press, a click, or a tick). Modelling it as
+ * a plain function rather than a class with an 'apply' method means
+ * actions are ordinary values: they can be built with partial application
+ * passed around, and combined with 'pipe2'
+ */
 type Action = (s: State) => State;
  
 /**
- * Curried: fixing `index` first yields a reusable State -> State action.
+ * fixing 'index' first yields a reusable State -> State action.
  * Used identically by both the keyboard handler and the mouse handler
- * (see flip$ and digitClick$ below), so the same partially-applied
- * function backs two independent input streams.
+ * so the same partially-applied function backs two independent input streams.
  */
 const flipDigit =
     (index: number) =>
@@ -196,11 +194,13 @@ const flipDigit =
         ...s,
         digits: updateAt<Digit>(index, d => (1 - d) as Digit)(s.digits),
     });
- 
+
+/** Toggles the paused flag. Takes no configuration, so unlike 'flipDigit'
+ * it is used directly as a value rather than called to produce one. */
 const togglePause = (s: State): State => ({ ...s, isPaused: !s.isPaused });
 
 /**
- * Curried: fixing `speed` yields a reusable FallingTarget -> FallingTarget
+ * fixing 'speed' yields a reusable FallingTarget -> FallingTarget
  * transform that can be mapped over any list of targets.
  */
 const moveTarget =
@@ -211,8 +211,7 @@ const moveTarget =
     });
 
 /**
- * Curried predicate: fixing `threshold` yields a reusable "did this roll
- * clear the bar" test, used when deciding whether to spawn a new target.
+ * fixing 'threshold' used when deciding whether to spawn a new target.
  */
 const rollBelow =
     (threshold: number) =>
@@ -227,7 +226,7 @@ const applyMovement = (s: State): State => ({
 
 /**
  * Stage 2 of tick: resolve the lowest target against the player's current
- * digit row — award a match, remove the matched target, or end the game
+ * digit row award a match, remove the matched target, or end the game
  * if it passed the check line unmatched.
  */
 const resolveCollisions = (s: State): State => {
@@ -253,9 +252,8 @@ const resolveCollisions = (s: State): State => {
  * Stage 3 of tick: possibly spawn a new falling target and advance the
  * survival/seed bookkeeping.
  *
- * Two independent, chained RNG rolls: one decides *whether* to spawn this
- * tick, a second decides *what value* the new target gets. Chaining rather
- * than reusing one roll keeps "when" and "what" statistically uncorrelated.
+ * Two independent, chained RNG rolls: one decides whether to spawn this
+ * tick, a second decides what value the new target gets.
  */
 const maybeSpawn = (s: State): State => {
     const spawnRollSeed = RNG.hash(s.seed);
@@ -287,32 +285,43 @@ const maybeSpawn = (s: State): State => {
 };
 
 /**
- * The per-frame action: composes movement, collision resolution, and
- * spawning into a single declarative pipeline. A no-op while paused or
- * once the game has ended.
+ * The per-frame action
+ * A no-op while paused or once the game has ended.
  */
 const tick: Action = (s: State): State =>
     s.isPaused || s.gameEnd
         ? s
         : pipe2(pipe2(applyMovement, resolveCollisions), maybeSpawn)(s);
  
-// reducer just applies the action
+/**
+ * The 'scan' accumulator. Now that every action is already a plain
+ * State -> State function, the indirection is
+ * kept so the intent ("apply the next action to the running state") reads
+ * clearly at the 'scan' call site in 'gameSession$'.
+ */
 const reduceState = (s: State, action: Action): State => action(s);
  
-// streams
+// Each stream below maps a raw DOM event into an 'Action' value. None of
+// them touch 'State; directly they only produce a function that
+// later gets applied by 'reduceState' inside 'scan', keeping event
+// handling and state transformation fully decoupled.
+
+/** Digit keys 1-8 flip the corresponding bit in the digit row. */
 const flip$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter(e => /^[1-8]$/.test(e.key)),
     map(e => flipDigit(Number(e.key) - 1)),
 );
- 
+
+/** Drives the game loop: one 'tick' action per animation frame. */
 const tick$ = interval(Constants.TICK_RATE_MS).pipe(map(() => tick));
  
 const canvasElement = document.querySelector("#svgCanvas") as SVGSVGElement;
 
 /**
  * Maps a mousedown event's screen coordinates into SVG viewBox space,
- * then determines which digit slot (if any) was clicked. Reuses
- * FlipDigit so mouse and keyboard input converge on identical logic.
+ * then determines which digit slot was clicked. Reuses the same
+ * partially-applied 'flipDigit' action as the keyboard handler, so mouse
+ * and keyboard input converge on identical logic.
  */
 const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
     map(e => {
@@ -334,20 +343,39 @@ const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
     map(index => flipDigit(index)),
 );
 
+/**
+ * Fires on 'r'/'R'. Carries no action of its own 
+ * 'state$' below
+ * 'switchMap's on this stream purely to restart a fresh 'gameSession$()'.
+ */
 const restartKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter(e => e.key === "r" || e.key === "R"),
 );
 
+/** 'p'/'P' toggles pause. */
 const pauseKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter(e => e.key === "p" || e.key === "P"),
     map(() => togglePause))
 ;
 
+/**
+ * A single playthrough: merges every input action stream into one, and
+ * folds them over the initial state with 'scan' to produce a live State
+ * stream. A fresh call creates a fresh 'scan' accumulator, which is what
+ * lets 'state$' implement "restart" by simply re-subscribing to a new
+ * 'gameSession$()'.
+ */
 export const gameSession$ = (): Observable<State> =>
     merge(flip$, tick$, digitClick$, pauseKey$).pipe(
         scan(reduceState, makeInitialState()),
     );
 
+/**
+ * The externally-consumed state stream. Emits immediately (via
+ * startWith) so the game begins without waiting for a keypress, and
+ * 'switchMap's to a brand-new 'gameSession$()' every time 'restartKey$' fires 
+ * cleanly unsubscribing the previous session's 'scan' state.
+ */
 export const state$ = (): Observable<State> =>
     merge(restartKey$).pipe(
         // emit once immediately so the game starts right away too,
@@ -416,7 +444,7 @@ const createSvgElement = (
 };
 
 /**
- * Draws a labelled box (rect + centred text) and appends both to `svg`.
+ * Draws a labelled box (rect + centred text) and appends both to 'svg'.
  * Shared by the falling-target and digit-toggle rendering, which both
  * followed this exact rect+text+append pattern with only the props and
  * label differing.
