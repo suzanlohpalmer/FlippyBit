@@ -134,6 +134,12 @@ class FlipDigit implements Action {
     }
 }
 
+class TogglePause implements Action {
+    apply(s: State): State {
+        return { ...s, isPaused: !s.isPaused };
+    }
+}
+
 /**
  * A pure, seedable pseudo-random number generator (Linear Congruential Generator).
  * Given the same seed, hash() always produces the same next value 
@@ -217,7 +223,7 @@ class Tick implements Action {
               ]
             : targetsAfterCollision;
 
-        return s.gameEnd
+        return s.isPaused || s.gameEnd
             ? s
               : {
                     ...s,
@@ -275,8 +281,15 @@ const restartKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter((e) => e.key === "r" || e.key === "R"),
 );
 
+const pauseKey$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
+    filter((e) => e.key === "p" || e.key === "P"),
+    map(() => new TogglePause()),
+);
+
 export const gameSession$ = (): Observable<State> =>
-    merge(flip$, tick$, digitClick$).pipe(scan(reduceState, makeInitialState()));
+    merge(flip$, tick$, digitClick$, pauseKey$).pipe(
+        scan(reduceState, makeInitialState()),
+    );
 
 export const state$ = (): Observable<State> =>
     merge(restartKey$).pipe(
@@ -447,7 +460,7 @@ const render = (): ((s: State) => void) => {
             "font-size": "12",
             fill: "black",
         });
-        instructionText.textContent = "Press R to restart";
+        instructionText.textContent = "Press R to restart, P to pause";
         svg.appendChild(instructionText);
 
         // Game over overlay
@@ -455,6 +468,23 @@ const render = (): ((s: State) => void) => {
             "visibility",
             s.gameEnd ? "visible" : "hidden",);
         s.gameEnd ? show(gameOverGroup) : hide(gameOverGroup);
+
+        // Pause overlay text
+        s.isPaused &&
+            svg.appendChild(
+                (() => {
+                    const pausedText = createSvgElement(svg.namespaceURI, "text", {
+                        x: `${Viewport.CANVAS_WIDTH / 2}`,
+                        y: `${Viewport.CANVAS_HEIGHT / 2}`,
+                        "text-anchor": "middle",
+                        "font-family": "monospace",
+                        "font-size": "28",
+                        fill: "blue",
+                    });
+                    pausedText.textContent = "PAUSED, press P again to resume";
+                    return pausedText;
+                })(),
+            );
     };
 };
 
