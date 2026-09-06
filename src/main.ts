@@ -345,6 +345,7 @@ const createSvgElement = (
 
 const render = (): ((s: State) => void) => {
     const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
+    const gameOverGroup = document.querySelector("#gameOver") as SVGGElement;
 
     svg.setAttribute(
         "viewBox",
@@ -358,12 +359,15 @@ const render = (): ((s: State) => void) => {
      * @param s Current state
      */
     return (s: State) => {
-        svg.innerHTML = ""; // clear last frame before drawing this one
+        // svg.innerHTML = ""; // clear last frame before drawing this one
+
+        Array.from(svg.children)
+            .filter((child) => child.id !== "gameOver")
+            .forEach((child) => svg.removeChild(child));
 
         // Update score display
         const scoreElement = document.querySelector("#scoreText") as HTMLElement;
         scoreElement.textContent = String(s.score);
-
 
         const debugText = createSvgElement(svg.namespaceURI, "text", {
             x: "10",
@@ -447,20 +451,24 @@ const render = (): ((s: State) => void) => {
         svg.appendChild(instructionText);
 
         // Game over overlay
-        s.gameEnd && svg.appendChild(
-            (() => {
-                const gameOverText = createSvgElement(svg.namespaceURI, "text", {
-                    x: `${Viewport.CANVAS_WIDTH / 2}`,
-                    y: `${Viewport.CANVAS_HEIGHT / 2}`,
-                    "text-anchor": "middle",
-                    "font-family": "monospace",
-                    "font-size": "32",
-                    fill: "red",
-                });
-                gameOverText.textContent = "GAME OVER";
-                return gameOverText;
-            })(),
-        );
+        gameOverGroup.setAttribute(
+            "visibility",
+            s.gameEnd ? "visible" : "hidden",);
+        s.gameEnd && bringToForeground(gameOverGroup);
+
+        // s.gameEnd && svg.appendChild(
+        //     (() => {
+        //         const gameOverText = createSvgElement(svg.namespaceURI, "text", {
+        //             x: `${Viewport.CANVAS_WIDTH / 2}`,
+        //             y: `${Viewport.CANVAS_HEIGHT / 2}`,
+        //             "text-anchor": "middle",
+        //             "font-family": "monospace",
+        //             "font-size": "32",
+        //             fill: "red",
+        //         });
+        //         gameOverText.textContent = "GAME OVER";
+        //         return gameOverText;
+        //     })(),
     };
 };
 
