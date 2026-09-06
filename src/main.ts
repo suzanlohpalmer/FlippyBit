@@ -110,9 +110,9 @@ const MIN_SPAWN_DELAY_TICKS = Math.ceil(
     MIN_SPAWN_DELAY_MS / Constants.TICK_RATE_MS,
 );
 
-/** Maps a [0,1) scaled seed value to a random hex digit 0-15. Pure. */
+/** Maps a [0,1) scaled seed value to a random hex digit 0-255. Pure. */
 const seedToTargetValue = (scaledSeed: number): number =>
-    Math.floor(scaledSeed * 16);
+    Math.floor(scaledSeed * 256);
 
 /** Interprets the digit row as a single binary number, MSB first. Pure. */
 const digitsToNumber = (digits: ReadonlyArray<Digit>): number =>
@@ -519,7 +519,7 @@ const render = (): ((s: State) => void) => {
                 "font-family": "monospace",
                 fill: "black",
             });
-            text.textContent = t.value.toString(16).toUpperCase();
+            text.textContent = t.value.toString(16).toUpperCase().padStart(2, "0");;
             svg.appendChild(box);
             svg.appendChild(text);
         });
