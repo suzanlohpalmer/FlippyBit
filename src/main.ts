@@ -61,6 +61,7 @@ type State = Readonly<{
     ticksSinceLastSpawn: number;  // counts up each tick, resets on spawn
     ticksSurvived: number,
     score: number, 
+    isPaused: boolean,
     gameEnd: boolean;
 }>;
 
@@ -70,7 +71,6 @@ const TargetConfig = {
     SPEED_RAMP_TICKS: 3000, // ticks (≈30s at 20ms/tick) to reach max speed
     CHECK_LINE_Y: Viewport.CANVAS_HEIGHT - 120,
     SPAWN_Y: 20,
-    //SPAWN_INTERVAL_TICKS: 8,
 } as const;
 
 const makeInitialState = (): State => {
@@ -88,14 +88,10 @@ const makeInitialState = (): State => {
         ticksSinceLastSpawn: 0,
         ticksSurvived: 0,
         score: 0,
+        isPaused: false,
         gameEnd: false,
     };
 };
-
-// Minimum ms between spawns so a target clears its own height before the
-// next one spawns at the same y position, plus a small safety margin.
-// const MIN_SPAWN_DELAY_MS =
-//     ((Target.HEIGHT + 20) / TargetConfig.FALL_SPEED) * Constants.TICK_RATE_MS;
 
 const MIN_SPAWN_DELAY_MS = 2000;
 const MAX_SPAWN_DELAY_MS = 3000
@@ -103,18 +99,6 @@ const MAX_SPAWN_DELAY_MS = 3000
 const MIN_SPAWN_DELAY_TICKS = Math.ceil(
     MIN_SPAWN_DELAY_MS / Constants.TICK_RATE_MS,
 );
-// const initialState: State = {
-//     digits: Array(Constants.DIGIT_COUNT).fill(0),
-//     targets: [{ value: TARGET_SEQUENCE[0], y: TargetConfig.SPAWN_Y }],
-//     nextTargetIndex: 1,
-//     seed: Date.now(), // varies per run
-//     ticksSinceLastSpawn: 0,
-//     gameEnd: false,
-// };
-
-/** Maps a [0,1) scaled seed value into a spawn-delay range. Pure. */
-const seedToSpawnDelay = (scaledSeed: number): number =>
-    MIN_SPAWN_DELAY_MS + scaledSeed * (MAX_SPAWN_DELAY_MS - MIN_SPAWN_DELAY_MS);
 
 /** Maps a [0,1) scaled seed value to a random hex digit 0-15. Pure. */
 const seedToTargetValue = (scaledSeed: number): number =>
@@ -199,6 +183,10 @@ class Tick implements Action {
             ? movedTargets.slice(1)
             : movedTargets;
         
+        // Two independent, chained RNG rolls: one decides *whether* to spawn
+        // this tick, a second decides *what value* the new target gets.
+        // Chaining rather than reusing one roll keeps "when" and "what"
+        // statistically uncorrelated.
         // Roll 1: decide whether to spawn this tick
         const spawnRollSeed = RNG.hash(s.seed);
         const spawnRoll = RNG.scale(spawnRollSeed);
@@ -247,7 +235,7 @@ class Tick implements Action {
 const reduceState = (s: State, action: Action): State => action.apply(s);
 
 // streams
-const flip$ = fromEvent<KeyboardEvent>(document, "keypress").pipe(
+const flip$ = fromEvent<KeyboardEvent>(document, "keydown").pipe(
     filter((e) => /^[1-8]$/.test(e.key)),
     map((e) => new FlipDigit(Number(e.key) - 1)),
 );
@@ -258,6 +246,11 @@ const tick$ = interval(Constants.TICK_RATE_MS).pipe(
 
 const canvasElement = document.querySelector("#svgCanvas") as SVGSVGElement;
 
+/**
+ * Maps a mousedown event's screen coordinates into SVG viewBox space,
+ * then determines which digit slot (if any) was clicked. Reuses
+ * FlipDigit so mouse and keyboard input converge on identical logic.
+ */
 const digitClick$ = fromEvent<MouseEvent>(canvasElement, "mousedown").pipe(
     map((e) => {
         const rect = canvasElement.getBoundingClientRect();
@@ -293,15 +286,6 @@ export const state$ = (): Observable<State> =>
         switchMap(() => gameSession$()),
     );
 
-
-/**
- * Updates the state by proceeding with one time step.
- *
- * @param s Current state
- * @returns Updated state
- */
-//const tick = (s: State) => s;
-
 // Rendering (side effects)
 
 /**
@@ -330,6 +314,17 @@ const hide = (elem: SVGElement): void => {
 };
 
 /**
+ * Removes every dynamically-drawn child from the SVG canvas before a
+ * redraw, while preserving the persistent #gameOver group defined
+ * statically in index.html.
+ */
+const clearDynamicChildren = (svg: SVGSVGElement): void => {
+    Array.from(svg.children)
+        .filter((child) => child.id !== "gameOver")
+        .forEach((child) => svg.removeChild(child));
+};
+
+/**
  * Creates an SVG element with the given properties.
  *
  * See https://developer.mozilla.org/en-US/docs/Web/SVG/Element for valid
@@ -351,6 +346,8 @@ const createSvgElement = (
 };
 
 const render = (): ((s: State) => void) => {
+    // One-time static screen drawn immediately on load, before any game
+    // state exists — replaced by the live game on the first render() call.
     const svg = document.querySelector("#svgCanvas") as SVGSVGElement;
     const gameOverGroup = document.querySelector("#gameOver") as SVGGElement;
 
@@ -366,11 +363,7 @@ const render = (): ((s: State) => void) => {
      * @param s Current state
      */
     return (s: State) => {
-        // svg.innerHTML = ""; // clear last frame before drawing this one
-
-        Array.from(svg.children)
-            .filter((child) => child.id !== "gameOver")
-            .forEach((child) => svg.removeChild(child));
+        clearDynamicChildren(svg);
 
         // Update score display
         const scoreElement = document.querySelector("#scoreText") as HTMLElement;
@@ -461,21 +454,7 @@ const render = (): ((s: State) => void) => {
         gameOverGroup.setAttribute(
             "visibility",
             s.gameEnd ? "visible" : "hidden",);
-        s.gameEnd && bringToForeground(gameOverGroup);
-
-        // s.gameEnd && svg.appendChild(
-        //     (() => {
-        //         const gameOverText = createSvgElement(svg.namespaceURI, "text", {
-        //             x: `${Viewport.CANVAS_WIDTH / 2}`,
-        //             y: `${Viewport.CANVAS_HEIGHT / 2}`,
-        //             "text-anchor": "middle",
-        //             "font-family": "monospace",
-        //             "font-size": "32",
-        //             fill: "red",
-        //         });
-        //         gameOverText.textContent = "GAME OVER";
-        //         return gameOverText;
-        //     })(),
+        s.gameEnd ? show(gameOverGroup) : hide(gameOverGroup);
     };
 };
 
